@@ -1,5 +1,6 @@
 import Vision
 import UIKit
+import CoreImage
 
 class ImageAlignmentService: ObservableObject {
     @Published var progress: Double = 0.0
@@ -7,14 +8,10 @@ class ImageAlignmentService: ObservableObject {
     func alignFrames(_ frames: [FrameInfo]) async -> [FrameInfo] {
         guard !frames.isEmpty else { return frames }
 
-        guard let referenceImage = frames.first?.image.cgImage else {
-            return frames
-        }
-
         var alignedFrames: [FrameInfo] = []
 
         for (index, frame) in frames.enumerated() {
-            let alignedImage = await alignImage(frame.image, to: referenceImage)
+            let alignedImage = alignImageSimple(frame.image, referenceSize: frames.first!.image.size)
 
             var alignedFrame = frame
             alignedFrame.alignedImage = alignedImage
@@ -28,55 +25,23 @@ class ImageAlignmentService: ObservableObject {
         return alignedFrames
     }
 
-    private func alignImage(_ image: UIImage, to reference: CGImage) async -> UIImage? {
-        let request = VNTranslationalImageRegistrationRequest(targetedCVPixelBuffer: convertToPixelBuffer(image)!, completionHandler: { request, error in
-            if let error = error {
-                print("Alignment error: \(error.localizedDescription)")
-                return
-            }
+    private func alignImageSimple(_ image: UIImage, referenceSize: CGSize) -> UIImage? {
+        UIGraphicsBeginImageContextWithOptions(referenceSize, false, 1.0)
+        defer { UIGraphicsEndImageContext() }
 
-            guard let observation = request.results?.first as? VNTranslationObservation else {
-                return
-            }
+        let ctx = UIGraphicsGetCurrentContext()
+        ctx?.setFillColor(UIColor.black.cgColor)
+        ctx?.fill(CGRect(origin: .zero, size: referenceSize))
 
-            let transform = CGAffineTransform(translationX: observation.translationInImageSpace.width,
-                                              y: observation.translationInImageSpace.height)
-        })
+        let targetRect = CGRect(
+            x: (referenceSize.width - image.size.width) / 2,
+            y: (referenceSize.height - image.size.height) / 2,
+            width: image.size.width,
+            height: image.size.height
+        )
 
-        return image
-    }
+        image.draw(in: targetRect)
 
-    private func convertToPixelBuffer(_ image: UIImage) -> CVPixelBuffer? {
-        guard let cgImage = image.cgImage else { return nil }
-
-        let width = cgImage.width
-        let height = cgImage.height
-
-        let attributes: [CFString: Any] = [
-            kCVPixelBufferCGImageCompatibilityKey: true,
-            kCVPixelBufferCGBitmapContextCompatibilityKey: true
-        ]
-
-        var pixelBuffer: CVPixelBuffer?
-        let status = CVPixelBufferCreate(kCFAllocatorDefault, width, height,
-                                          kCVPixelFormatType_32ARGB, attributes as CFDictionary,
-                                          &pixelBuffer)
-
-        guard status == kCVReturnSuccess, let buffer = pixelBuffer else {
-            return nil
-        }
-
-        CVPixelBufferLockBaseAddress(buffer, [])
-        defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
-
-        let context = CGContext(data: CVPixelBufferGetBaseAddress(buffer),
-                                width: width, height: height,
-                                bitsPerComponent: 8, bytesPerRow: CVPixelBufferGetBytesPerRow(buffer),
-                                space: CGColorSpaceCreateDeviceRGB(),
-                                bitmapInfo: CGImageAlphaInfo.noneSkipFirst.rawValue)
-
-        context?.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
-
-        return buffer
+        return UIGraphicsGetImageFromCurrentImageContext()
     }
 }

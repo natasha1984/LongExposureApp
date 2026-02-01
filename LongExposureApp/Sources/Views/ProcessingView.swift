@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 
 struct ProcessingView: View {
     @EnvironmentObject var appState: AppState
@@ -57,6 +58,7 @@ struct ProcessingView: View {
 struct ResultView: View {
     @EnvironmentObject var appState: AppState
     @State private var isSaving = false
+    @State private var shareURL: URL?
 
     var body: some View {
         VStack(spacing: 20) {
@@ -76,8 +78,11 @@ struct ResultView: View {
                     .buttonStyle(.bordered)
                     .disabled(isSaving)
 
-                    ShareLink(item: Image(uiImage: image), subject: Text("Long Exposure"), message: Text("Check out this long exposure I created!"))
-                    {
+                    ShareLink(
+                        item: generateShareURL(for: image),
+                        subject: Text("Long Exposure"),
+                        message: Text("Check out this long exposure I created!")
+                    ) {
                         Label("Share", systemImage: "square.and.arrow.up")
                     }
                     .buttonStyle(.borderedProminent)
@@ -86,13 +91,23 @@ struct ResultView: View {
                 Button("Start Over") {
                     appState.reset()
                 }
-                .buttonStyle(.borderedOutline)
+                .buttonStyle(.bordered)
                 .padding(.top)
             }
 
             Spacer()
         }
         .padding()
+    }
+
+    private func generateShareURL(for image: UIImage) -> URL {
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("long_exposure_\(UUID().uuidString).jpg")
+
+        if let data = image.jpegData(compressionQuality: 0.9) {
+            try? data.write(to: tempURL)
+        }
+        return tempURL
     }
 
     private func saveImage(_ image: UIImage) {

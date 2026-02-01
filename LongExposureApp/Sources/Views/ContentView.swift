@@ -61,7 +61,7 @@ struct SelectionView: View {
             Spacer()
         }
         .padding()
-        .onChange(of: selectedItem) { _, newValue in
+        .onChange(of: selectedItem) { newValue in
             Task {
                 if let newValue {
                     await loadVideo(from: newValue)

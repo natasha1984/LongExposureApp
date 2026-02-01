@@ -11,9 +11,9 @@ class VideoFrameExtractor: ObservableObject {
         let totalDuration = CMTimeGetSeconds(duration)
         let frameCount = min(Int(totalDuration / frameInterval), maxFrames)
 
-        guard let imageGenerator = try? await ImageGenerator(asset: asset) else {
-            throw VideoError.failedToCreateGenerator
-        }
+        let imageGenerator = AVAssetImageGenerator(asset: asset)
+        imageGenerator.appliesPreferredTrackTransform = true
+        imageGenerator.maximumSize = CGSize(width: 1920, height: 1920)
 
         var frames: [FrameInfo] = []
         let frameTimeInterval = totalDuration / Double(frameCount)
@@ -21,9 +21,12 @@ class VideoFrameExtractor: ObservableObject {
         for i in 0..<frameCount {
             let time = CMTime(seconds: Double(i) * frameTimeInterval, preferredTimescale: 600)
 
-            if let cgImage = try? await imageGenerator.image(at: time).image.cgImage {
+            do {
+                let cgImage = try imageGenerator.copyCGImage(at: time, actualTime: nil)
                 let uiImage = UIImage(cgImage: cgImage)
                 frames.append(FrameInfo(index: i, image: uiImage))
+            } catch {
+                print("Failed to extract frame \(i): \(error.localizedDescription)")
             }
 
             await MainActor.run {
