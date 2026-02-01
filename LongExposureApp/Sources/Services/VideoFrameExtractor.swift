@@ -6,17 +6,37 @@ class VideoFrameExtractor: ObservableObject {
 
     func extractFrames(from videoURL: URL, frameInterval: TimeInterval = 0.1, maxFrames: Int = 50) async throws -> [FrameInfo] {
         let asset = AVAsset(url: videoURL)
+
+        let isPlayable = try await asset.load(.isPlayable)
+        guard isPlayable else {
+            throw VideoError.videoNotPlayable
+        }
+
         let duration = try await asset.load(.duration)
+        let tracks = try await asset.load(.tracks)
+
+        guard !tracks.isEmpty else {
+            throw VideoError.noVideoTracks
+        }
 
         let totalDuration = CMTimeGetSeconds(duration)
+        guard totalDuration > 0 else {
+            throw VideoError.invalidDuration
+        }
+
         let frameCount = min(Int(totalDuration / frameInterval), maxFrames)
+        guard frameCount > 0 else {
+            throw VideoError.noFramesToExtract
+        }
 
         let imageGenerator = AVAssetImageGenerator(asset: asset)
         imageGenerator.appliesPreferredTrackTransform = true
-        imageGenerator.maximumSize = CGSize(width: 1920, height: 1920)
+        imageGenerator.maximumSize = CGSize(width: 1280, height: 1280)
+        imageGenerator.requestedTimeToleranceBefore = .zero
+        imageGenerator.requestedTimeToleranceAfter = .zero
 
         var frames: [FrameInfo] = []
-        let frameTimeInterval = totalDuration / Double(frameCount)
+        let frameTimeInterval = totalDuration / Double(max(1, frameCount))
 
         for i in 0..<frameCount {
             let time = CMTime(seconds: Double(i) * frameTimeInterval, preferredTimescale: 600)
@@ -26,7 +46,8 @@ class VideoFrameExtractor: ObservableObject {
                 let uiImage = UIImage(cgImage: cgImage)
                 frames.append(FrameInfo(index: i, image: uiImage))
             } catch {
-                print("Failed to extract frame \(i): \(error.localizedDescription)")
+                print("Frame \(i) at time \(CMTimeGetSeconds(time))s failed: \(error.localizedDescription)")
+                // Continue with next frame instead of crashing
             }
 
             await MainActor.run {
@@ -34,20 +55,33 @@ class VideoFrameExtractor: ObservableObject {
             }
         }
 
+        guard !frames.isEmpty else {
+            throw VideoError.failedToExtractFrame
+        }
+
         return frames
     }
 }
 
 enum VideoError: LocalizedError {
-    case failedToCreateGenerator
+    case videoNotPlayable
+    case noVideoTracks
+    case invalidDuration
+    case noFramesToExtract
     case failedToExtractFrame
 
     var errorDescription: String? {
         switch self {
-        case .failedToCreateGenerator:
-            return "Failed to create video frame generator"
+        case .videoNotPlayable:
+            return "Video is not playable"
+        case .noVideoTracks:
+            return "No video tracks found in the video"
+        case .invalidDuration:
+            return "Invalid video duration"
+        case .noFramesToExtract:
+            return "No frames to extract (video too short)"
         case .failedToExtractFrame:
-            return "Failed to extract frame from video"
+            return "Failed to extract any frames from video"
         }
     }
 }
